@@ -104,7 +104,7 @@
             </div>
             <div>
                 <label>Graphic Horizontal Position (X)</label>
-                <input type="range" id="imgX" min="35" max="150" value="130">
+                <input type="range" id="imgX" min="0" max="150" value="130">
             </div>
             <div>
                 <label>Graphic Vertical Position (Y)</label>
@@ -613,33 +613,56 @@ imageColorBuffer = Array.from(
 );
 // Inverted line box
 
-if(lineInvert){
+// Calculate dynamic width of line field
+let lineWidth = 3; // left padding
 
+let lastPixel = 0;
+let currentX = 2; // same X as drawStringToBuffer()
+
+for (const ch of lineText) {
+    const glyph = FONT_SMALL[ch] || FONT_SMALL[" "];
+
+    // Find the rightmost lit pixel of this glyph
+    let right = 0;
+    for (const row of glyph) {
+        right = Math.max(right, row.lastIndexOf("#"));
+    }
+
+    lastPixel = currentX + Math.round((right + 1) * 1.75);
+    currentX += Math.round(glyph[0].length * 1.75) + 1;
+}
+
+// End the line field only 4 LEDs after the last visible pixel
+lineWidth = Math.min(lastPixel + 4, COLS);
+
+lineWidth = Math.min(lineWidth, COLS); // don't exceed board
+
+// Draw inverted line background
+if (lineInvert) {
     fillRect(
         bitBuffer,
         0,
         0,
-        30,
+        lineWidth,
         ROWS,
         1
     );
-
 }
 
 // Inverted VIA strip
 
-if(viaInvert){
-
+if (useVia && viaInvert) {
     fillRect(
         bitBuffer,
-        30,
+        lineWidth,
         0,
-        130,
+        COLS - lineWidth,
         8,
         1
     );
-
 }
+
+
             
       drawStringToBuffer(
     bitBuffer,
@@ -661,20 +684,23 @@ drawStringToBuffer(
     FONT_SMALL,
     viaScrollX,
     1,
-    false,
-    false,
-    viaScale,
+    document.getElementById("destBold").checked,
+    document.getElementById("destItalic").checked,
+    destScale,
     viaInvert
 );
 
 }
 
+const textYOffset =
+    parseInt(document.getElementById("textYOffset").value);
+
 drawStringToBuffer(
     bitBuffer,
     destText,
     FONT_SMALL,
-    scrollX,
-    useVia ? 10 : 5,
+    lineWidth + scrollX,          // Destination Position (X)
+    (useVia ? 10 : 5) + textYOffset, // Vertical Shift
     document.getElementById("destBold").checked,
     document.getElementById("destItalic").checked,
     destScale,
@@ -703,6 +729,7 @@ else{
                 }
             }
         }
+    
 
         document.getElementById('imageLoader').addEventListener('change', function(e) {
             const reader = new FileReader();
