@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Destination board simulator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body { background-color: #0d0d0c; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .sign-casing { background-color: #08080a; border: 6px solid #1c1c1f; border-radius: 4px; padding: 10px; margin-bottom: 30px; box-shadow: 0 20px 40px rgba(0,0,0,0.7); }
+        .led-matrix { display: grid; grid-template-rows: repeat(19, 6px); grid-template-columns: repeat(160, 6px); gap: 2px; background-color: #000000; padding: 2px; }
+        .led { width: 6px; height: 6px; background-color: #141416; border-radius: 50%; }
+        .controls-container { background-color: #161618; border-radius: 8px; padding: 25px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; max-width: 950px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1px solid #232325; }
+        .control-panel { display: flex; flex-direction: column; gap: 14px; }
+        label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.75px; color: #a1a1a5; display: block; margin-bottom: 4px; }
+        .checkbox-group { display: flex; gap: 15px; margin-top: 2px; }
+        .checkbox-group label { display: flex; align-items: center; gap: 6px; text-transform: none; color: #e0e0e0; font-size: 13px; cursor: pointer; }
+        input[type="text"], input[type="range"], input[type="file"], select { width: 100%; background-color: #242426; border: 1px solid #323236; color: #fff; padding: 10px; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        .color-picker-wrapper { display: flex; align-items: center; gap: 10px; background-color: #242426; padding: 8px 12px; border-radius: 6px; border: 1px solid #323236; }
+        .btn-danger { background-color: #3a1e1e; border: 1px solid #5c2626; color: #ff8585; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; text-transform: uppercase; font-weight: 600; text-align: center; }
+        .section-title { font-size: 12px; font-weight: 700; color: #ffffff; border-bottom: 1px solid #2d2d30; padding-bottom: 6px; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="sign-casing" id="captureArea">
+        <div class="led-matrix" id="matrix"></div>
+    </div>
+
+    <div class="controls-container">
+        <div class="control-panel">
+            <div class="section-title">Matrix Text Inputs</div>
+            <div>
+                <label for="lineInput">Line Number (Letters/Nums)</label>
+                <input type="text" id="lineInput" value="204">
+                <div class="checkbox-group">
+                    <label><input type="checkbox" id="lineBold" checked> Bold</label>
+                    <label><input type="checkbox" id="lineItalic"> Italic</label>
+                </div>
+            </div>
+            <div>
+                <label for="destInput">Destination Text</label>
+                <input type="text" id="destInput" value="Гоце Делчев">
+                <div class="checkbox-group">
+                    <label><input type="checkbox" id="destBold"> Bold</label>
+                    <label><input type="checkbox" id="destItalic"> Italic</label>
+                </div>
+                <label style="margin-top:10px">Destination Text Scale (0.1 - 2)</label>
+                <input type="range" id="destFontScale" min="0.1" max="2" step="0.1" value="1">
+            </div>
+            <button id="screenshotBtn" class="btn-danger" style="background-color: #265c3e; border: 1px solid #2e734c; color: #85ffb5; margin-top: 10px;">Export Sign Screenshot</button>
+        </div>
+
+        <div class="control-panel">
+            <div class="section-title">Hardware Photo Digitizer</div>
+            <div>
+                <label for="imageLoader">Upload Photo / Graphic Asset</label>
+                <input type="file" id="imageLoader" accept="image/*">
+            </div>
+            <div>
+                <label>Graphic Scale (Width)</label>
+                <input type="range" id="imgScale" min="8" max="100" value="24">
+            </div>
+            <div>
+                <label>Graphic Horizontal Position (X)</label>
+                <input type="range" id="imgX" min="35" max="150" value="130">
+            </div>
+            <div>
+                <label>Graphic Vertical Position (Y)</label>
+                <input type="range" id="imgY" min="-10" max="15" value="3">
+            </div>
+            <button class="btn-danger" id="clearImage" style="display: none;">Remove Uploaded Graphic</button>
+        </div>
+
+        <div class="control-panel">
+            <div class="section-title">Diode Hardware Profile</div>
+            <div class="color-picker-wrapper">
+                <input type="color" id="colorActive" value="#ff9900">
+                <span>Active Diode Color</span>
+            </div>
+            <div class="color-picker-wrapper">
+                <input type="color" id="colorDormant" value="#000000">
+                <span>Dormant Panel Color</span>
+            </div>
+            <label>Text Vertical Shift</label>
+            <input type="range" id="textYOffset" min="-6" max="6" value="0">
+        </div>
+    </div>
+
+    <canvas id="hiddenCanvas" style="display:none;"></canvas>
+
+    <script>
+        const ROWS = 19;
+        const COLS = 160;
+        const LINE_WIDTH = 38;
+        
+        const FONT_SMALL = { '0': [" ### ", "#   #", "# # #", "#   #", "#   #", "#   #", " ### "], '1': ["  #  ", " ##  ", "  #  ", "  #  ", "  #  ", "  #  ", "#####"], '2': [" ### ", "#   #", "    #", "   # ", "  #  ", " #   ", "#####"], '3': ["#### ", "    #", " ### ", "    #", "    #", "#   #", "#### "], '4': ["   # ", "  ## ", " # # ", "#  # ", "#####", "   # ", "   # "], '5': ["#####", "#    ", "#### ", "    #", "    #", "#   #", "#### "], '6': [" ### ", "#    ", "#### ", "#   #", "#   #", "#   #", " ### "], '7': ["#####", "    #", "   # ", "  #  ", " #   ", " #   ", " #   "], '8': [" ### ", "#   #", " ### ", "#   #", "#   #", "#   #", " ### "], '9': [" ### ", "#   #", "#   #", " ####", "    #", "#   #", " ### "], 'A': [" ### ", "#   #", "#####", "#   #", "#   #", "#   #", "#   #"], 'B': ["#### ", "#   #", "#### ", "#   #", "#   #", "#   #", "#### "], 'C': [" ####", "#    ", "#    ", "#    ", "#    ", "#    ", " ####"], 'D': ["#### ", "#   #", "#   #", "#   #", "#   #", "#   #", "#### "], 'E': ["#####", "#    ", "#### ", "#    ", "#    ", "#    ", "#####"], 'F': ["#####", "#    ", "#### ", "#    ", "#    ", "#    ", "#    "], 'G': [" ####", "#    ", "#    ", "# ###", "#   #", "#   #", " ####"], 'H': ["#   #", "#   #", "#####", "#   #", "#   #", "#   #", "#   #"], 'I': [" ### ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", " ### "], 'J': ["  ###", "    #", "    #", "    #", "    #", "#   #", " ### "], 'K': ["#   #", "#  # ", "###  ", "#  # ", "#   #", "#   #", "#   #"], 'L': ["#    ", "#    ", "#    ", "#    ", "#    ", "#    ", "#####"], 'M': ["#   #", "## ##", "# # #", "#   #", "#   #", "#   #", "#   #"], 'N': ["#   #", "##  #", "# # #", "#  ##", "#   #", "#   #", "#   #"], 'O': [" ### ", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "], 'P': ["#### ", "#   #", "#### ", "#    ", "#    ", "#    ", "#    "], 'Q': [" ### ", "#   #", "#   #", "#   #", "# # #", "#  # ", " ####"], 'R': ["#### ", "#   #", "#### ", "#  # ", "#   #", "#   #", "#   #"], 'S': [" ####", "#    ", " ### ", "    #", "    #", "#    ", "#### "], 'T': ["#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  "], 'U': ["#   #", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "], 'V': ["#   #", "#   #", "#   #", "#   #", " # # ", " # # ", "  #  "], 'W': ["#   #", "#   #", "#   #", "# # #", "# # #", "## ##", "#   #"], 'X': ["#   #", "#   #", " # # ", "  #  ", " # # ", "#   #", "#   #"], 'Y': ["#   #", "#   #", " # # ", "  #  ", "  #  ", "  #  ", "  #  "], 'Z': ["#####", "    #", "   # ", "  #  ", " #   ", "#    ", "#####"], 'a': ["     ", "     ", " ####", "    #", " #####", "#   #", " #### "], 'b': ["#    ", "#    ", "#### ", "#   #", "#   #", "#   #", "#### "], 'c': ["     ", "     ", " ####", "#    ", "#    ", "#    ", " ####"], 'd': ["    #", "    #", " ####", "#   #", "#   #", "#   #", " ####"], 'e': ["     ", "     ", " ####", "#   #", "#####", "#    ", " ####"], 'f': ["  ## ", " # #", " #  ", "###  ", " #  ", " #  ", "###  "], 'g': ["     ", "     ", " ####", "#   #", " ####", "    #", "#### "], 'h': ["#    ", "#    ", "#### ", "#   #", "#   #", "#   #", "#   #"], 'i': ["  #  ", "     ", " ### ", "  #  ", "  #  ", "  #  ", " ### "], 'j': ["  #  ", "     ", "  ###", "    #", "    #", "    #", "#### "], 'k': ["#    ", "#    ", "#  # ", "###  ", "#  # ", "#   #", "#   #"], 'l': [" ### ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", " ### "], 'm': ["     ", "     ", "## ##", "# # #", "#   #", "#   #", "#   #"], 'n': ["     ", "     ", "#### ", "#   #", "#   #", "#   #", "#   #"], 'o': ["     ", "     ", " ### ", "#   #", "#   #", "#   #", " ### "], 'p': ["     ", "     ", "#### ", "#   #", "#### ", "#    ", "#    "], 'q': ["     ", "     ", " ####", "#   #", " ####", "    #", "    #"], 'r': ["     ", "     ", "#### ", "#   #", "#    ", "#    ", "#    "], 's': ["     ", "     ", " ####", "#    ", " ### ", "    #", "#### "], 't': [" #   ", " #   ", "###  ", " #   ", " #   ", " #  #", "  ## "], 'u': ["     ", "     ", "#   #", "#   #", "#   #", "#  ##", " ## #"], 'v': ["     ", "     ", "#   #", "#   #", " # # ", " # # ", "  #  "], 'w': ["     ", "     ", "#   #", "#   #", "# # #", "## ##", "#   #"], 'x': ["     ", "     ", "#   #", " # # ", "  #  ", " # # ", "#   #"], 'y': ["     ", "     ", "#   #", "#   #", " ####", "    #", "#### "], 'z': ["     ", "     ", "#####", "   # ", "  #  ", " #   ", "#####"], 'А': [" ### ", "#   #", "#####", "#   #", "#   #", "#   #", "#   #"], 'Б': ["#### ", "#    ", "###  ", "#  # ", "#   #", "#   #", "#### "], 'В': ["#### ", "#   #", "#### ", "#   #", "#   #", "#   #", "#### "], 'Г': ["#####", "#    ", "#    ", "#    ", "#    ", "#    ", "#    "], 'Д': [" ### ", " #  #", " #  #", " #  #", "#####", "#   #", "#   #"], 'Е': ["#####", "#    ", "#### ", "#    ", "#    ", "#    ", "#####"], 'Ж': ["# # #", "# # #", " # # ", "  #  ", " # # ", "# # #", "# # #"], 'З': ["#### ", "    #", "   # ", " ##  ", "   # ", "    #", "#### "], 'И': ["#   #", "#  ##", "# # #", "##  #", "#   #", "#   #", "#   #"], 'Й': [" # # ", "#   #", "#  ##", "# # #", "##  #", "#   #", "#   #"], 'К': ["#   #", "#  # ", "###  ", "#  # ", "#   #", "#   #", "#   #"], 'Л': [" ##  ", "#  # ", "#  # ", "#### ", "#  # ", "#  # ", "#  # "], 'М': ["#   #", "## ##", "# # #", "#   #", "#   #", "#   #", "#   #"], 'Н': ["#   #", "#   #", "#####", "#   #", "#   #", "#   #", "#   #"], 'О': [" ### ", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "], 'П': ["#####", "#   #", "#   #", "#   #", "#   #", "#   #", "#   #"], 'Р': ["#### ", "#   #", "#   #", "#### ", "#    ", "#    ", "#    "], 'С': [" ####", "#    ", "#    ", "#    ", "#    ", "#    ", " ####"], 'Т': ["#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  "], 'У': ["#   #", "#   #", " # # ", "  #  ", "  #  ", " #   ", "##   "], 'Ф': ["  #  ", " ### ", "# # #", "# # #", " ### ", "  #  ", "  #  "], 'Х': ["#   #", "#   #", " # # ", "  #  ", " # # ", "#   #", "#   #"], 'Ц': ["#   #", "#   #", "#   #", "#   #", "#####", "    #", "    #"], 'Ч': ["#   #", "#   #", "#### ", "    #", "    #", "    #", "    #"], 'Ш': ["# # #", "# # #", "# # #", "# # #", "# # #", "# # #", "#####"], 'Щ': ["# # #", "# # #", "# # #", "# # #", "#####", "    #", "    #"], 'Ъ': ["#    ", "#    ", "###  ", "#  # ", "#   #", "#   #", "#### "], 'Ь': ["#    ", "#    ", "#### ", "#   #", "#   #", "#   #", "#### "], 'Ю': ["#  ##", "# # #", "### #", "# # #", "# # #", "# # #", "#  ##"], 'ю': [" #  #", " ####", " #  #", " #  #", " ####", " #  #", " #  #"], 'Я': [" ####", "#   #", "#   #", " ####", "  # #", " #  #", "#   #"], 'а': ["     ", "     ", " ####", "#   #", " ####", "#   #", " ####"], 'б': ["###  ", "#    ", "#### ", "#   #", "#   #", "#   #", "#### "], 'в': ["     ", "     ", "#### ", "#   #", "#### ", "#   #", "#### "], 'г': ["     ", "     ", "#####", "#    ", "#    ", "#    ", "#    "], 'д': ["     ", "     ", " ### ", " #  #", "#####", "#   #", "#   #"], 'е': ["     ", "     ", " ####", "#   #", "#####", "#    ", " ####"], 'ж': ["     ", "     ", "# # #", " # # ", "  #  ", " # # ", "# # #"], 'з': ["     ", "     ", "#### ", "   # ", " ##  ", "    #", "#### "], 'и': ["     ", "     ", "#   #", "##  #", "# # #", "#  ##", "#   #"], 'й': ["   # ", "  #  ", "#   #", "##  #", "# # #", "#  ##", "#   #"], 'к': ["     ", "     ", "#   #", "#  # ", "###  ", "#  # ", "#   #"], 'л': ["     ", "     ", " ##  ", " #   ", "#### ", "#  # ", "#  # "], 'м': ["     ", "     ", "#   #", "## ##", "# # #", "#   #", "#   #"], 'н': ["     ", "     ", "#   #", "#   #", "#####", "#   #", "#   #"], 'о': ["     ", "     ", " ### ", "#   #", "#   #", "#   #", " ### "], 'п': ["     ", "     ", "#####", "#   #", "#   #", "#   #", "#####"], 'р': ["     ", "     ", "#### ", "#   #", "#### ", "#    ", "#    "], 'с': ["     ", "     ", " ####", "#    ", "#    ", "#    ", " ####"], 'т': ["     ", "     ", "#####", "  #  ", "  #  ", "  #  ", "  #  "], 'у': ["     ", "     ", "#   #", " # # ", "  #  ", " #   ", "##   "], 'ф': ["     ", "  #  ", " ### ", "# # #", " ### ", "  #  ", "  #  "], 'х': ["     ", "     ", "#   #", " # # ", "  #  ", " # # ", "#   #"], 'ц': ["     ", "     ", "#   #", "#   #", "#####", "    #", "    #"], 'ч': ["     ", "     ", "#   #", "#### ", "    #", "    #", "    #"], 'ш': ["     ", "     ", "# # #", "# # #", "# # #", "# # #", "#####"], 'щ': ["     ", "     ", "# # #", "# # #", "#####", "    #", "    #"], 'ъ': ["     ", "#    ", "###  ", "#  # ", "#   #", "#   #", "#### "], 'ь': ["     ", "     ", "#    ", "#### ", "#   #", "#   #", "#### "], 'ю': [" #  #", " ####", " #  #", " #  #", " ####", " #  #", " #  #"], 'я': ["     ", "     ", " ####", "#   #", " ####", "  # #", "#   #"], '.': ["     ", "     ", "     ", "     ", "     ", "     ", "  #  "], ',': ["     ", "     ", "     ", "     ", "     ", "  #  ", " #   "], '!': ["  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "     ", "  #  "], '?': [" ### ", "#   #", "    #", "   # ", "  #  ", "     ", "  #  "], ':': ["     ", "  #  ", "     ", "     ", "     ", "  #  ", "     "], ';': ["     ", "  #  ", "     ", "     ", "     ", "  #  ", " #   "], '(': ["  ## ", " #   ", " #   ", " #   ", " #   ", " #   ", "  ## "], ')': [" ##  ", "   # ", "   # ", "   # ", "   # ", "   # ", " ##  "], '-': ["     ", "     ", "     ", "#####", "     ", "     ", "     "], ' ': ["     ", "     ", "     ", "     ", "     ", "     ", "     "] };
+
+        const matrixContainer = document.getElementById('matrix');
+        const gridElements = [];
+        let uploadedImage = null;
+        let removeBackground = false;
+
+        for (let r = 0; r < ROWS; r++) {
+            gridElements[r] = [];
+            for (let c = 0; c < COLS; c++) {
+                const led = document.createElement('div');
+                led.classList.add('led');
+                matrixContainer.appendChild(led);
+                gridElements[r][c] = led;
+            }
+        }
+
+        document.getElementById('screenshotBtn').addEventListener('click', function() {
+            html2canvas(document.getElementById('captureArea'), { backgroundColor: "#08080a", scale: 2 }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'destination_board.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        });
+
+        function drawGlyphToBuffer(buffer, glyph, startX, startY, isBold, isItalic, scale) {
+            const glyphRows = glyph.length;
+            const glyphCols = glyph[0].length;
+            for (let row = 0; row < glyphRows; row++) {
+                for (let col = 0; col < glyphCols; col++) {
+                    if (glyph[row][col] === '#') {
+                        const drawSize = Math.max(1, Math.round(scale));
+                        for (let sr = 0; sr < drawSize; sr++) {
+                            for (let sc = 0; sc < drawSize; sc++) {
+                                const outY = startY + Math.round(row * scale) + sr;
+                                const outX = startX + Math.round(col * scale) + sc + (isItalic ? Math.floor((glyphRows - row) * 0.2) : 0);
+                                if (outY >= 0 && outY < ROWS && outX >= 0 && outX < COLS) {
+                                    buffer[outY][outX] = 1;
+                                    if (isBold && (outX + 1) < COLS) buffer[outY][outX + 1] = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function drawStringToBuffer(buffer, text, font, startX, startY, isBold, isItalic, scale) {
+            let currentX = startX;
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const glyph = font[char] || font[' '];
+                if (!glyph) continue;
+                drawGlyphToBuffer(buffer, glyph, currentX, startY, isBold, isItalic, scale);
+                currentX += Math.round(glyph[0].length * scale) + 1;
+            }
+        }
+
+       function drawImageToBuffer(buffer) {
+            if (!uploadedImage) return;
+            const targetW = parseInt(document.getElementById('imgScale').value);
+            const aspect = uploadedImage.height / uploadedImage.width;
+            const targetH = Math.max(1, Math.round(targetW * aspect));
+            const imgX = parseInt(document.getElementById('imgX').value);
+            const imgY = parseInt(document.getElementById('imgY').value);
+            const canvas = document.getElementById('hiddenCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = targetW; canvas.height = targetH;
+            ctx.clearRect(0, 0, targetW, targetH);
+            ctx.drawImage(uploadedImage, 0, 0, targetW, targetH);
+            
+            const imgData = ctx.getImageData(0, 0, targetW, targetH).data;
+
+            for (let y = 0; y < targetH; y++) {
+                for (let x = 0; x < targetW; x++) {
+                    const idx = (y * targetW + x) * 4;
+                    const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2], a = imgData[idx+3];
+                    
+                    // Logic: If background removal is active, only draw pixels 
+                    // that are relatively dark (a sum of RGB < 450) 
+                    // and not transparent.
+                    let isDark = (r + g + b) < 450; 
+                    
+                    if (removeBackground) {
+                        if (isDark && a > 128) {
+                            const outY = imgY + y;
+                            const outX = imgX + x;
+                            if (outY >= 0 && outY < ROWS && outX >= 0 && outX < COLS) buffer[outY][outX] = 1;
+                        }
+                    } else {
+                        // Standard mode
+                        if (a > 128) {
+                            const outY = imgY + y;
+                            const outX = imgX + x;
+                            if (outY >= 0 && outY < ROWS && outX >= 0 && outX < COLS) buffer[outY][outX] = 1;
+                        }
+                    }
+                }
+            }
+        }
+        function refreshMatrix() {
+            const lineText = document.getElementById('lineInput').value;
+            const destText = document.getElementById('destInput').value;
+            const destScale = parseFloat(document.getElementById('destFontScale').value);
+            const bitBuffer = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+            
+            drawStringToBuffer(bitBuffer, lineText, FONT_SMALL, 2, 4, document.getElementById('lineBold').checked, document.getElementById('lineItalic').checked, 1.75);
+            drawStringToBuffer(bitBuffer, destText, FONT_SMALL, LINE_WIDTH, 6 + parseInt(document.getElementById('textYOffset').value), document.getElementById('destBold').checked, document.getElementById('destItalic').checked, destScale);
+            
+            drawImageToBuffer(bitBuffer);
+
+            const cActive = document.getElementById('colorActive').value;
+            const cDormant = document.getElementById('colorDormant').value;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    gridElements[r][c].style.backgroundColor = (bitBuffer[r][c] === 1) ? cActive : cDormant;
+                }
+            }
+        }
+
+        document.getElementById('imageLoader').addEventListener('change', function(e) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                uploadedImage = new Image();
+                uploadedImage.onload = function() {
+                    removeBackground = confirm("Do you want to remove the background?");
+                    document.getElementById('clearImage').style.display = 'block';
+                    refreshMatrix();
+                };
+                uploadedImage.src = event.target.result;
+            };
+            if(e.target.files[0]) reader.readAsDataURL(e.target.files[0]);
+        });
+
+        document.getElementById('clearImage').addEventListener('click', function() {
+            uploadedImage = null;
+            document.getElementById('imageLoader').value = '';
+            this.style.display = 'none';
+            refreshMatrix();
+        });
+
+        document.querySelectorAll('input').forEach(el => el.addEventListener('input', refreshMatrix));
+        refreshMatrix();
+    </script>
+</body>
+</html>
